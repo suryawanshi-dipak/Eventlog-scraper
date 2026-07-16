@@ -1,0 +1,101 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          java-package: jdk
+
+      - name: Add WiX Toolset to PATH
+        shell: pwsh
+        run: |
+          $wix = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $wix) {
+            Write-Host "WiX Toolset not found, installing via choco..."
+            choco install wixtoolset -y --no-progress
+            $wix = Get-ChildItem "C:\Program Files (x86)\WiX Toolset*" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if ($wix) {
+            "$($wix.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            Write-Host "WiX found at: $($wix.FullName)\bin"
+          } else {
+            Write-Error "WiX Toolset not found. jpackage --type exe requires WiX 3.x."
+            exit 1
+          }
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          version="1.0.0"
+          if [[ "${GITHUB_REF_NAME}" == v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Compile
+        shell: bash
+        run: |
+          mkdir -p build/classes
+          javac -encoding UTF-8 -cp "lib/*" -d build/classes NewNetOneEventlog.java
+
+      - name: Build jar (with POI deps alongside for jpackage's classpath)
+        shell: bash
+        run: |
+          mkdir -p build/libs
+          jar --create --file build/libs/NewNetOneEventlog.jar --main-class NewNetOneEventlog -C build/classes .
+          cp lib/*.jar build/libs/
+
+      - name: Build Windows EXE installer
+        shell: bash
+        run: |
+          mkdir -p dist
+          jpackage \
+            --type exe \
+            --name NewNetOneEventlog \
+            --app-version "${{ steps.version.outputs.value }}" \
+            --vendor "surya" \
+            --description "NewNetOne Eventlog Exporter" \
+            --input build/libs \
+            --main-jar NewNetOneEventlog.jar \
+            --main-class NewNetOneEventlog \
+            --dest dist \
+            --win-menu \
+            --win-shortcut \
+            --win-dir-chooser \
+            --java-options "-Dfile.encoding=UTF-8"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NewNetOneEventlog-windows-exe-${{ steps.version.outputs.value }}
+          path: dist/*.exe
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: NewNetOneEventlog v${{ steps.version.outputs.value }}
+          files: dist/*.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false
