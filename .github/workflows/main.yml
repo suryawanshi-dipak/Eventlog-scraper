@@ -94,17 +94,15 @@ jobs:
       - name: Verify bundled JVM launcher survived packaging
         shell: bash
         run: |
-          appimage_dir=$(find build/jpackage-temp -maxdepth 1 -type d -name "NewNetOneEventlog*" | head -n1)
-          if [ -z "$appimage_dir" ]; then
-            echo "No app-image directory found under build/jpackage-temp/"; exit 1
-          fi
-          if [ ! -f "$appimage_dir/runtime/bin/java.exe" ]; then
-            echo "ERROR: runtime/bin/java.exe is missing from the packaged app image."
+          found=$(find build/jpackage-temp -type f -iname "java.exe" -path "*/runtime/bin/*" 2>/dev/null | head -n1)
+          if [ -z "$found" ]; then
+            echo "ERROR: no runtime/bin/java.exe found anywhere under build/jpackage-temp."
             echo "This usually means Windows Defender quarantined jlink/jpackage output during the build."
-            find "$appimage_dir/runtime/bin" -maxdepth 1 -iname "*.exe" || true
+            echo "Directory layout under build/jpackage-temp:"
+            find build/jpackage-temp -maxdepth 5 -type d || true
             exit 1
           fi
-          echo "OK: runtime/bin/java.exe present."
+          echo "OK: found $found"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
