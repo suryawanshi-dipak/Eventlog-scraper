@@ -2,7 +2,24 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import javax.swing.*;
-import java.awt.GridLayout;
+import java.awt.BasicStroke;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Frame;
+import java.awt.GradientPaint;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
+import java.awt.RenderingHints;
+import java.awt.event.KeyEvent;
+import java.awt.geom.Arc2D;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.QuadCurve2D;
+import java.awt.geom.RoundRectangle2D;
 import java.io.FileOutputStream;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
@@ -83,6 +100,10 @@ public class NewNetOneEventlog {
     HttpClient client;
 
     public static void main(String[] args) throws Exception {
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception ignored) {}
+
         if (!showLoginDialog()) {
             System.out.println("Cancelled by user.");
             return;
@@ -90,27 +111,90 @@ public class NewNetOneEventlog {
         new NewNetOneEventlog().run();
     }
 
-    /** Shows a GUI window asking for username, password, date range and time range. */
+    static final Color BRAND_ORANGE = new Color(230, 126, 34);
+    static final Color BRAND_DARK   = new Color(60, 60, 60);
+    static final Color BRAND_MUTED  = new Color(120, 120, 120);
+    static final Color PANEL_WHITE  = Color.WHITE;
+
+    static java.awt.Font uiFont(int style, int size) {
+        return new java.awt.Font("Segoe UI", style, size);
+    }
+
+    /** Shows a styled GUI window asking for username, password, date range and time range. */
     static boolean showLoginDialog() {
-        JTextField tfUser      = new JTextField(USERNAME, 20);
-        JPasswordField tfPass  = new JPasswordField(20);
-        JTextField tfStartDate = new JTextField(START_DATE, 20);
-        JTextField tfEndDate   = new JTextField(END_DATE, 20);
-        JTextField tfStartTime = new JTextField(START_TIME, 20);
-        JTextField tfEndTime   = new JTextField(END_TIME, 20);
+        JTextField tfUser      = new JTextField(USERNAME, 18);
+        JPasswordField tfPass  = new JPasswordField(18);
+        JTextField tfStartDate = new JTextField(START_DATE, 18);
+        JTextField tfEndDate   = new JTextField(END_DATE, 18);
+        JTextField tfStartTime = new JTextField(START_TIME, 18);
+        JTextField tfEndTime   = new JTextField(END_TIME, 18);
 
-        JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
-        panel.add(new JLabel("Username:"));               panel.add(tfUser);
-        panel.add(new JLabel("Password:"));                panel.add(tfPass);
-        panel.add(new JLabel("Start Date (d-M-yyyy):"));   panel.add(tfStartDate);
-        panel.add(new JLabel("End Date (d-M-yyyy):"));     panel.add(tfEndDate);
-        panel.add(new JLabel("Start Time (HH:mm):"));      panel.add(tfStartTime);
-        panel.add(new JLabel("End Time (HH:mm):"));        panel.add(tfEndTime);
+        JDialog dialog = new JDialog((Frame) null, "NewNetOne Eventlog", true);
 
-        int result = JOptionPane.showConfirmDialog(null, panel,
-                "NewNetOne Eventlog - Login & Search Range",
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-        if (result != JOptionPane.OK_OPTION) return false;
+        JPanel content = new JPanel(new BorderLayout(0, 14));
+        content.setBackground(PANEL_WHITE);
+        content.setBorder(BorderFactory.createEmptyBorder(20, 24, 16, 24));
+
+        JLabel title = new JLabel("🐯  NewNetOne Eventlog Scraper");
+        title.setFont(uiFont(java.awt.Font.BOLD, 18));
+        title.setForeground(BRAND_DARK);
+        JLabel subtitle = new JLabel("Sign in and choose a search range");
+        subtitle.setFont(uiFont(java.awt.Font.PLAIN, 12));
+        subtitle.setForeground(BRAND_MUTED);
+
+        JPanel header = new JPanel();
+        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+        header.setBackground(PANEL_WHITE);
+        header.add(title);
+        header.add(Box.createVerticalStrut(4));
+        header.add(subtitle);
+        header.add(Box.createVerticalStrut(6));
+        header.add(new JSeparator());
+
+        JPanel form = new JPanel(new GridBagLayout());
+        form.setBackground(PANEL_WHITE);
+        GridBagConstraints gc = new GridBagConstraints();
+        gc.insets = new Insets(6, 4, 6, 4);
+        gc.fill = GridBagConstraints.HORIZONTAL;
+
+        int row = 0;
+        addFormRow(form, gc, row++, "Username", tfUser);
+        addFormRow(form, gc, row++, "Password", tfPass);
+        addFormRow(form, gc, row++, "Start Date (d-M-yyyy)", tfStartDate);
+        addFormRow(form, gc, row++, "End Date (d-M-yyyy)", tfEndDate);
+        addFormRow(form, gc, row++, "Start Time (HH:mm)", tfStartTime);
+        addFormRow(form, gc, row++, "End Time (HH:mm)", tfEndTime);
+
+        JButton cancelBtn = new JButton("Cancel");
+        styleButton(cancelBtn, new Color(235, 235, 235), BRAND_DARK);
+
+        JButton okBtn = new JButton("Start Scraping");
+        styleButton(okBtn, BRAND_ORANGE, Color.WHITE);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        buttons.setBackground(PANEL_WHITE);
+        buttons.add(cancelBtn);
+        buttons.add(okBtn);
+
+        content.add(header, BorderLayout.NORTH);
+        content.add(form, BorderLayout.CENTER);
+        content.add(buttons, BorderLayout.SOUTH);
+
+        dialog.setContentPane(content);
+        dialog.getRootPane().setDefaultButton(okBtn);
+        dialog.setResizable(false);
+
+        boolean[] okPressed = {false};
+        okBtn.addActionListener(e -> { okPressed[0] = true; dialog.dispose(); });
+        cancelBtn.addActionListener(e -> dialog.dispose());
+        dialog.getRootPane().registerKeyboardAction(e -> dialog.dispose(),
+                KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
+
+        dialog.pack();
+        dialog.setLocationRelativeTo(null);
+        dialog.setVisible(true); // blocks (modal) until dispose()
+
+        if (!okPressed[0]) return false;
 
         USERNAME   = tfUser.getText().trim();
         PASSWORD   = new String(tfPass.getPassword());
@@ -125,6 +209,27 @@ public class NewNetOneEventlog {
             return false;
         }
         return true;
+    }
+
+    static void addFormRow(JPanel form, GridBagConstraints gc, int row, String label, JComponent field) {
+        gc.gridx = 0; gc.gridy = row; gc.weightx = 0;
+        JLabel l = new JLabel(label);
+        l.setFont(uiFont(java.awt.Font.PLAIN, 13));
+        l.setForeground(BRAND_DARK);
+        form.add(l, gc);
+
+        gc.gridx = 1; gc.weightx = 1;
+        field.setFont(uiFont(java.awt.Font.PLAIN, 13));
+        form.add(field, gc);
+    }
+
+    static void styleButton(JButton btn, Color bg, Color fg) {
+        btn.setFont(uiFont(java.awt.Font.BOLD, 13));
+        btn.setBackground(bg);
+        btn.setForeground(fg);
+        btn.setFocusPainted(false);
+        btn.setOpaque(true);
+        btn.setBorder(BorderFactory.createEmptyBorder(8, 18, 8, 18));
     }
 
     void run() throws Exception {
@@ -212,7 +317,7 @@ public class NewNetOneEventlog {
         SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null,
                 "Scraped " + rows.size() + " row(s) across " + finalPage + " page(s)!\n"
                         + "Saved to " + outputPath + "\n\n"
-                        + "The hamsters have earned a nap. 🐹💤",
+                        + "The tiger is full and taking a nap. 🐯💤",
                 "All done! 🎉", JOptionPane.INFORMATION_MESSAGE));
     }
 
@@ -223,10 +328,11 @@ public class NewNetOneEventlog {
         return new java.io.File(dir, OUTPUT_FILENAME).getAbsolutePath();
     }
 
-    // ------------------------- funny progress dialog -------------------------
+    // ------------------------- tiger progress dialog -------------------------
     JDialog progressDialog;
     JLabel funnyLabel;
     JLabel statsLabel;
+    TigerEatingPanel tigerPanel;
 
     static final String[] FUNNY_MESSAGES = {
         "Herding eventlogs into neat little rows... 🐑",
@@ -243,22 +349,43 @@ public class NewNetOneEventlog {
 
     void showProgressDialog() {
         SwingUtilities.invokeLater(() -> {
-            progressDialog = new JDialog((java.awt.Frame) null, "Scraping in progress...", false);
-            JPanel panel = new JPanel(new java.awt.BorderLayout(10, 10));
-            panel.setBorder(BorderFactory.createEmptyBorder(15, 20, 15, 20));
+            progressDialog = new JDialog((Frame) null, "Scraping in progress...", false);
+
+            JPanel panel = new JPanel(new BorderLayout(10, 10));
+            panel.setBackground(PANEL_WHITE);
+            panel.setBorder(BorderFactory.createEmptyBorder(16, 20, 16, 20));
+
+            JLabel title = new JLabel("Feeding the tiger your eventlog rows...", SwingConstants.CENTER);
+            title.setFont(uiFont(java.awt.Font.BOLD, 14));
+            title.setForeground(BRAND_DARK);
+
+            tigerPanel = new TigerEatingPanel();
 
             funnyLabel = new JLabel(FUNNY_MESSAGES[0], SwingConstants.CENTER);
-            JProgressBar bar = new JProgressBar();
-            bar.setIndeterminate(true);
-            statsLabel = new JLabel("Page 0 · 0 rows found", SwingConstants.CENTER);
+            funnyLabel.setFont(uiFont(java.awt.Font.PLAIN, 12));
+            funnyLabel.setForeground(BRAND_MUTED);
 
-            panel.add(funnyLabel, java.awt.BorderLayout.NORTH);
-            panel.add(bar, java.awt.BorderLayout.CENTER);
-            panel.add(statsLabel, java.awt.BorderLayout.SOUTH);
+            statsLabel = new JLabel("Page 0 · 0 rows found", SwingConstants.CENTER);
+            statsLabel.setFont(uiFont(java.awt.Font.BOLD, 12));
+            statsLabel.setForeground(BRAND_DARK);
+
+            JPanel south = new JPanel();
+            south.setLayout(new BoxLayout(south, BoxLayout.Y_AXIS));
+            south.setBackground(PANEL_WHITE);
+            funnyLabel.setAlignmentX(0.5f);
+            statsLabel.setAlignmentX(0.5f);
+            south.add(funnyLabel);
+            south.add(Box.createVerticalStrut(4));
+            south.add(statsLabel);
+
+            panel.add(title, BorderLayout.NORTH);
+            panel.add(tigerPanel, BorderLayout.CENTER);
+            panel.add(south, BorderLayout.SOUTH);
 
             progressDialog.setContentPane(panel);
-            progressDialog.setSize(380, 130);
+            progressDialog.setSize(440, 250);
             progressDialog.setLocationRelativeTo(null);
+            progressDialog.setResizable(false);
             progressDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
             progressDialog.setVisible(true);
         });
@@ -268,13 +395,146 @@ public class NewNetOneEventlog {
         SwingUtilities.invokeLater(() -> {
             if (funnyLabel != null) funnyLabel.setText(FUNNY_MESSAGES[(page - 1) % FUNNY_MESSAGES.length]);
             if (statsLabel != null) statsLabel.setText("Page " + page + " · " + totalRows + " rows found");
+            if (tigerPanel != null) tigerPanel.setProgress(page / (double) MAX_PAGES);
         });
     }
 
     void closeProgressDialog() {
         SwingUtilities.invokeLater(() -> {
+            if (tigerPanel != null) tigerPanel.setProgress(1.0);
             if (progressDialog != null) progressDialog.dispose();
+            if (tigerPanel != null) tigerPanel.stopAnimation();
         });
+    }
+
+    /** A tiger that strolls across the panel eating a row of meat as scraping progresses. */
+    static class TigerEatingPanel extends JPanel {
+        private static final int NUM_MEATS = 8;
+        private volatile double targetFraction = 0.0;
+        private double currentFraction = 0.0;
+        private int frame = 0;
+        private final Timer timer;
+
+        TigerEatingPanel() {
+            setPreferredSize(new Dimension(400, 120));
+            setOpaque(true);
+            setBackground(new Color(235, 245, 232));
+            timer = new Timer(45, e -> {
+                currentFraction += (targetFraction - currentFraction) * 0.12;
+                frame++;
+                repaint();
+            });
+            timer.start();
+        }
+
+        void setProgress(double fraction) {
+            targetFraction = Math.max(0.0, Math.min(1.0, fraction));
+        }
+
+        void stopAnimation() {
+            timer.stop();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2 = (Graphics2D) g;
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth(), h = getHeight();
+            int margin = 34;
+            int baseline = h - 34;
+
+            g2.setPaint(new GradientPaint(0, 0, new Color(214, 235, 250), 0, h, new Color(235, 248, 230)));
+            g2.fillRect(0, 0, w, h);
+
+            g2.setColor(new Color(196, 168, 118));
+            g2.fillRect(0, baseline + 20, w, Math.max(0, h - (baseline + 20)));
+
+            int usableW = Math.max(1, w - 2 * margin);
+            for (int i = 0; i < NUM_MEATS; i++) {
+                double frac = (i + 0.5) / NUM_MEATS;
+                int x = margin + (int) (frac * usableW);
+                boolean eaten = frac < currentFraction - 0.02;
+                drawMeat(g2, x, baseline, eaten);
+            }
+
+            int tigerX = margin + (int) (currentFraction * usableW);
+            drawTiger(g2, tigerX, baseline, frame);
+        }
+
+        private void drawMeat(Graphics2D g2, int cx, int baseline, boolean eaten) {
+            int y = baseline - 6;
+            if (eaten) {
+                g2.setColor(new Color(160, 160, 160));
+                g2.drawOval(cx - 5, y + 2, 10, 5);
+                return;
+            }
+            g2.setColor(new Color(235, 235, 235));
+            g2.fillRoundRect(cx - 3, y + 6, 6, 10, 4, 4);
+            g2.setColor(new Color(178, 92, 48));
+            g2.fillOval(cx - 11, y - 8, 22, 18);
+            g2.setColor(new Color(140, 62, 30));
+            g2.drawOval(cx - 11, y - 8, 22, 18);
+        }
+
+        private void drawTiger(Graphics2D g2, int cx, int baseline, int frame) {
+            int bodyY = baseline - 22;
+            double bounce = Math.sin(frame * 0.35) * 2;
+            int by = (int) (bodyY + bounce);
+            Color furOrange = new Color(240, 150, 40);
+            Color stripe = new Color(60, 40, 20);
+
+            // tail
+            g2.setStroke(new BasicStroke(4, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.setColor(furOrange);
+            double tailWag = Math.sin(frame * 0.4) * 10;
+            g2.draw(new QuadCurve2D.Double(cx - 18, by + 6, cx - 30, by - 10 + tailWag, cx - 34, by - 22 + tailWag));
+
+            // legs (alternate for a walking effect)
+            g2.setStroke(new BasicStroke(5, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            int legOffset = (frame / 3) % 2 == 0 ? 2 : -2;
+            g2.drawLine(cx - 10, by + 14, cx - 10 + legOffset, by + 24);
+            g2.drawLine(cx + 8, by + 14, cx + 8 - legOffset, by + 24);
+
+            // body
+            g2.setColor(furOrange);
+            g2.fill(new RoundRectangle2D.Double(cx - 16, by - 6, 34, 22, 16, 16));
+            g2.setColor(stripe);
+            g2.setStroke(new BasicStroke(2));
+            for (int i = 0; i < 3; i++) g2.drawLine(cx - 8 + i * 8, by - 4, cx - 6 + i * 8, by + 12);
+
+            // head
+            int hx = cx + 16, hy = by - 6;
+            g2.setColor(furOrange);
+            g2.fill(new Ellipse2D.Double(hx - 12, hy - 12, 24, 22));
+
+            // ears
+            g2.fillOval(hx - 11, hy - 18, 9, 9);
+            g2.fillOval(hx + 2, hy - 18, 9, 9);
+            g2.setColor(stripe);
+            g2.fillOval(hx - 8, hy - 15, 4, 4);
+            g2.fillOval(hx + 5, hy - 15, 4, 4);
+
+            // eyes
+            g2.setColor(Color.WHITE);
+            g2.fillOval(hx - 6, hy - 4, 5, 5);
+            g2.fillOval(hx + 3, hy - 4, 5, 5);
+            g2.setColor(Color.BLACK);
+            g2.fillOval(hx - 5, hy - 3, 2, 2);
+            g2.fillOval(hx + 4, hy - 3, 2, 2);
+
+            // chewing mouth
+            double open = (Math.sin(frame * 0.6) + 1) / 2.0 * 8 + 2;
+            g2.setColor(new Color(120, 20, 20));
+            g2.fill(new Arc2D.Double(hx - 2, hy + 2, 16, open, 200, 140, Arc2D.CHORD));
+
+            // face stripes
+            g2.setColor(stripe);
+            g2.setStroke(new BasicStroke(1.5f));
+            g2.drawLine(hx - 8, hy - 8, hx - 4, hy - 2);
+            g2.drawLine(hx + 2, hy - 8, hx + 6, hy - 2);
+        }
     }
 
     // ------------------------- request bodies -------------------------
