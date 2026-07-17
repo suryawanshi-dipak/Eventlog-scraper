@@ -1,4 +1,4 @@
-# NewNetOne Eventlog Exporter
+# NewNetOne DA Eventlog Exporter
 
 A small Windows desktop tool that logs in to the NewNetOne **DirectEvent** portal, searches the Eventlog for a date/time range, follows every result page automatically, and exports everything to an Excel (`.xlsx`) file — with errors grouped onto their own sheets.
 
