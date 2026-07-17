@@ -100,15 +100,67 @@ public class NewNetOneEventlog {
     HttpClient client;
 
     public static void main(String[] args) throws Exception {
+        initLogger();
+        log("=== NewNetOneEventlog starting (pid=" + ProcessHandle.current().pid() + ") ===");
+
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ignored) {}
-
-        if (!showLoginDialog()) {
-            System.out.println("Cancelled by user.");
-            return;
+        } catch (Exception e) {
+            log("Look and feel setup failed (non-fatal): " + e);
         }
-        new NewNetOneEventlog().run();
+
+        try {
+            if (!showLoginDialog()) {
+                log("Cancelled by user at login dialog.");
+                return;
+            }
+            log("Login dialog OK. user=" + USERNAME + " range=" + START_DATE + " " + START_TIME
+                    + " -> " + END_DATE + " " + END_TIME);
+            new NewNetOneEventlog().run();
+            log("=== Finished normally ===");
+        } catch (Throwable t) {
+            java.io.StringWriter sw = new java.io.StringWriter();
+            t.printStackTrace(new java.io.PrintWriter(sw));
+            log("FATAL ERROR: " + t);
+            log(sw.toString());
+            final String msg = t.getClass().getSimpleName() + ": " + t.getMessage();
+            final String logPath = LOG_PATH;
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null,
+                    "Something went wrong:\n" + msg + "\n\nFull details were saved to:\n" + logPath,
+                    "Error", JOptionPane.ERROR_MESSAGE));
+        } finally {
+            closeLogger();
+        }
+    }
+
+    // ------------------------- logging -------------------------
+    static String LOG_PATH;
+    static java.io.PrintWriter logWriter;
+
+    static java.io.File eventlogDir() {
+        java.io.File dir = new java.io.File(System.getProperty("user.home"),
+                "Desktop" + java.io.File.separator + "Eventlog");
+        if (!dir.exists()) dir.mkdirs();
+        return dir;
+    }
+
+    static void initLogger() {
+        try {
+            LOG_PATH = new java.io.File(eventlogDir(), "app_log.txt").getAbsolutePath();
+            logWriter = new java.io.PrintWriter(new java.io.FileWriter(LOG_PATH, false), true);
+        } catch (Exception e) {
+            logWriter = null; // fall back to console-only logging
+        }
+    }
+
+    static void log(String msg) {
+        String line = "[" + java.time.LocalTime.now().withNano(0) + "] " + msg;
+        System.out.println(line);
+        if (logWriter != null) logWriter.println(line);
+    }
+
+    static void closeLogger() {
+        if (logWriter != null) logWriter.close();
     }
 
     static final Color BRAND_ORANGE = new Color(230, 126, 34);
@@ -243,14 +295,16 @@ public class NewNetOneEventlog {
                 .build();
 
         // 1. GET login page -> ViewState tokens
-        System.out.println("Loading login page...");
+        log("Loading login page...");
         String html = get(LOGIN_URL);
         String vs  = field(html, "__VIEWSTATE");
         String vsg = field(html, "__VIEWSTATEGENERATOR");
         String ev  = field(html, "__EVENTVALIDATION");
+        log("Login page tokens: VIEWSTATE=" + vs.length() + " chars, GENERATOR=" + vsg.length()
+                + " chars, EVENTVALIDATION=" + ev.length() + " chars");
 
         // 2. POST credentials
-        System.out.println("Logging in...");
+        log("Logging in as " + USERNAME + " ...");
         String body = "__EVENTTARGET=&__EVENTARGUMENT="
                 + "&__VIEWSTATE=" + enc(vs)
                 + "&__VIEWSTATEGENERATOR=" + enc(vsg)
@@ -261,23 +315,23 @@ public class NewNetOneEventlog {
         html = post(LOGIN_URL, body);
 
         if (html.contains("id=\"tbPassword\"") && !html.contains("gvEventlog")) {
-            System.out.println("LOGIN FAILED - check username / password.");
+            log("LOGIN FAILED - server returned the login form again (check username / password).");
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null,
+                    "Login failed. Please check your username and password and try again.",
+                    "Login Failed", JOptionPane.ERROR_MESSAGE));
             return;
         }
-        System.out.println("Login OK.");
+        log("Login OK.");
 
         // 3. GET eventlog page -> fresh tokens
         html = get(EVENTLOG_URL);
         vs  = field(html, "__VIEWSTATE");
         vsg = field(html, "__VIEWSTATEGENERATOR");
         ev  = field(html, "__EVENTVALIDATION");
-        try (java.io.FileWriter fw = new java.io.FileWriter("debug_eventlog_form.html", StandardCharsets.UTF_8)) {
-            fw.write(html);
-        }
+        saveDebugFile("debug_eventlog_form.html", html);
 
         // 4. POST search
-        System.out.println("Searching " + START_DATE + " " + START_TIME
-                + "  ->  " + END_DATE + " " + END_TIME + " ...");
+        log("Searching " + START_DATE + " " + START_TIME + "  ->  " + END_DATE + " " + END_TIME + " ...");
         body = buildSearchBody(vs, vsg, ev);
         html = post(EVENTLOG_URL, body);
 
@@ -289,7 +343,7 @@ public class NewNetOneEventlog {
             while (true) {
                 int before = rows.size();
                 parseTable(html, rows);
-                System.out.println("Page " + page + ": total rows so far = " + rows.size());
+                log("Page " + page + ": total rows so far = " + rows.size());
                 updateProgress(page, rows.size());
 
                 vs  = field(html, "__VIEWSTATE");
@@ -310,8 +364,7 @@ public class NewNetOneEventlog {
 
         String outputPath = resolveOutputPath();
         writeXlsx(rows, outputPath);
-        System.out.println("Done. Imported " + rows.size()
-                + " rows across " + page + " page(s) -> " + outputPath);
+        log("Done. Imported " + rows.size() + " rows across " + page + " page(s) -> " + outputPath);
 
         int finalPage = page;
         SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null,
@@ -586,13 +639,13 @@ public class NewNetOneEventlog {
         String lower = html.toLowerCase();
         int marker = lower.indexOf("gveventlog");
         if (marker < 0) {
-            System.out.println("WARNING: 'gvEventlog' not found in server response - can't locate results table.");
+            log("WARNING: 'gvEventlog' not found in server response - can't locate results table.");
             dumpDebugHtml(html);
             return;
         }
         int tableStart = lower.lastIndexOf("<table", marker);
         if (tableStart < 0) {
-            System.out.println("WARNING: found 'gvEventlog' but no enclosing <table> before it.");
+            log("WARNING: found 'gvEventlog' but no enclosing <table> before it.");
             dumpDebugHtml(html);
             return;
         }
@@ -639,11 +692,11 @@ public class NewNetOneEventlog {
         }
 
         if (col == null || col.size() < 6) {
-            System.out.println("WARNING: results table found but header columns didn't match "
+            log("WARNING: results table found but header columns didn't match "
                     + "(vendor/service/error/username/response/created).");
             dumpDebugHtml(html);
         } else if (rowsFromThisPage == 0) {
-            System.out.println("NOTE: header recognized but 0 data rows on this page.");
+            log("NOTE: header recognized but 0 data rows on this page.");
         }
     }
 
@@ -671,11 +724,18 @@ public class NewNetOneEventlog {
     static void dumpDebugHtml(String html) {
         if (debugDumpCount >= 3) return; // don't spam the folder
         debugDumpCount++;
-        String name = "debug_page" + debugDumpCount + ".html";
-        try (java.io.FileWriter fw = new java.io.FileWriter(name, StandardCharsets.UTF_8)) {
-            fw.write(html);
-            System.out.println("Saved raw response to " + name + " for inspection.");
-        } catch (Exception ignored) {}
+        saveDebugFile("debug_page" + debugDumpCount + ".html", html);
+    }
+
+    /** Writes a diagnostic file into the (always-writable) Eventlog output folder - never fatal. */
+    static void saveDebugFile(String name, String content) {
+        java.io.File f = new java.io.File(eventlogDir(), name);
+        try (java.io.FileWriter fw = new java.io.FileWriter(f, StandardCharsets.UTF_8)) {
+            fw.write(content);
+            log("Saved " + f.getAbsolutePath() + " for inspection.");
+        } catch (Exception e) {
+            log("Could not write debug file " + f.getAbsolutePath() + ": " + e);
+        }
     }
 
     static String clean(String s) {
@@ -804,7 +864,9 @@ public class NewNetOneEventlog {
         HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                 .GET().build();
-        return client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)).body();
+        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        log("GET  " + url + " -> HTTP " + resp.statusCode() + " (" + resp.body().length() + " chars)");
+        return resp.body();
     }
 
     String post(String url, String body) throws Exception {
@@ -813,7 +875,9 @@ public class NewNetOneEventlog {
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
-        return client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)).body();
+        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        log("POST " + url + " -> HTTP " + resp.statusCode() + " (" + resp.body().length() + " chars)");
+        return resp.body();
     }
 
     /** Extract the value="" of an <input> identified by id (or name). */
