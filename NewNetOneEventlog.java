@@ -70,8 +70,10 @@ public class NewNetOneEventlog {
     static String USERNAME = "";            // filled in via the login window
     static String PASSWORD = "";
 
-    static String START_DATE = "16-7-2026";   // d-M-yyyy (site format)
-    static String END_DATE   = "16-7-2026";
+    static final java.time.format.DateTimeFormatter SITE_DATE_FMT =
+        java.time.format.DateTimeFormatter.ofPattern("d-M-yyyy");
+    static String START_DATE = java.time.LocalDate.now().format(SITE_DATE_FMT);   // d-M-yyyy (site format)
+    static String END_DATE   = java.time.LocalDate.now().format(SITE_DATE_FMT);
     static String START_TIME = "00:00";
     static String END_TIME   = "23:59";
 
@@ -88,7 +90,7 @@ public class NewNetOneEventlog {
     static final boolean SHOW_ERROR       = true;
     static final boolean SHOW_PENDING     = true;
 
-    static final int MAX_PAGES = 20;
+    static final int MAX_PAGES = Integer.MAX_VALUE; // no cap - follow "Next >>" until it disappears
     static final String OUTPUT_FILENAME = "Eventlog.xlsx";
     // -----------------------------------------------------------------
 
@@ -163,7 +165,9 @@ public class NewNetOneEventlog {
         if (logWriter != null) logWriter.close();
     }
 
-    static final Color BRAND_ORANGE = new Color(230, 126, 34);
+    static final Color BRAND_ORANGE     = new Color(230, 126, 34);
+    static final Color BRAND_BLUE_LIGHT = new Color(74, 122, 255);
+    static final Color BRAND_BLUE_DARK  = new Color(20, 40, 200);
     static final Color BRAND_DARK   = new Color(60, 60, 60);
     static final Color BRAND_MUTED  = new Color(120, 120, 120);
     static final Color PANEL_WHITE  = Color.WHITE;
@@ -220,8 +224,7 @@ public class NewNetOneEventlog {
         JButton cancelBtn = new JButton("Cancel");
         styleButton(cancelBtn, new Color(235, 235, 235), BRAND_DARK);
 
-        JButton okBtn = new JButton("Start Scraping");
-        styleButton(okBtn, BRAND_ORANGE, Color.WHITE);
+        JButton okBtn = new GradientButton("Start Scraping", BRAND_BLUE_LIGHT, BRAND_BLUE_DARK);
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         buttons.setBackground(PANEL_WHITE);
@@ -282,6 +285,34 @@ public class NewNetOneEventlog {
         btn.setFocusPainted(false);
         btn.setOpaque(true);
         btn.setBorder(BorderFactory.createEmptyBorder(8, 18, 8, 18));
+    }
+
+    /** A button painted with a diagonal color gradient instead of a flat background. */
+    static class GradientButton extends JButton {
+        private final Color from, to;
+
+        GradientButton(String text, Color from, Color to) {
+            super(text);
+            this.from = from;
+            this.to = to;
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setForeground(Color.WHITE);
+            setFont(uiFont(java.awt.Font.BOLD, 13));
+            setBorder(BorderFactory.createEmptyBorder(8, 22, 8, 22));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setPaint(new GradientPaint(0, 0, from, getWidth(), getHeight(), to));
+            g2.fill(new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 10, 10));
+            g2.dispose();
+            super.paintComponent(g);
+        }
     }
 
     void run() throws Exception {
@@ -444,11 +475,16 @@ public class NewNetOneEventlog {
         });
     }
 
+    static final int TIGER_CYCLE_PAGES = 5; // pages per lap - total page count is unbounded now
+
     void updateProgress(int page, int totalRows) {
         SwingUtilities.invokeLater(() -> {
             if (funnyLabel != null) funnyLabel.setText(FUNNY_MESSAGES[(page - 1) % FUNNY_MESSAGES.length]);
             if (statsLabel != null) statsLabel.setText("Page " + page + " · " + totalRows + " rows found");
-            if (tigerPanel != null) tigerPanel.setProgress(page / (double) MAX_PAGES);
+            if (tigerPanel != null) {
+                double lap = ((page - 1) % TIGER_CYCLE_PAGES + 1) / (double) TIGER_CYCLE_PAGES;
+                tigerPanel.setProgress(lap);
+            }
         });
     }
 
