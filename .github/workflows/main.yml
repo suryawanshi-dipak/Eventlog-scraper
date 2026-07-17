@@ -71,12 +71,12 @@ jobs:
           Add-MpPreference -ExclusionProcess "jpackage.exe"
           Add-MpPreference -ExclusionProcess "jlink.exe"
 
-      - name: Build Windows EXE installer
+      - name: Build Windows app-image
         shell: bash
         run: |
-          mkdir -p dist build/jpackage-temp
+          mkdir -p build/appimage
           jpackage \
-            --type exe \
+            --type app-image \
             --name NewNetOneEventlog \
             --app-version "${{ steps.version.outputs.value }}" \
             --vendor "surya" \
@@ -84,25 +84,40 @@ jobs:
             --input build/libs \
             --main-jar NewNetOneEventlog.jar \
             --main-class NewNetOneEventlog \
-            --dest dist \
-            --temp build/jpackage-temp \
-            --win-menu \
-            --win-shortcut \
-            --win-dir-chooser \
+            --dest build/appimage \
             --java-options "-Dfile.encoding=UTF-8"
 
-      - name: Verify bundled JVM launcher survived packaging
+      - name: Repair bundled JVM launcher if it went missing
+        shell: pwsh
+        run: |
+          $runtimeBin = "build/appimage/NewNetOneEventlog/runtime/bin"
+          if (-not (Test-Path "$runtimeBin/java.exe")) {
+            Write-Host "java.exe missing from the packaged runtime (likely stripped by AV during jlink/jpackage)."
+            Write-Host "Restoring launcher executables from JAVA_HOME ($env:JAVA_HOME) ..."
+            Copy-Item "$env:JAVA_HOME/bin/*.exe" -Destination $runtimeBin -Force
+          }
+          if (-not (Test-Path "$runtimeBin/java.exe")) {
+            Write-Error "java.exe is still missing after repair attempt - cannot produce a working installer."
+            Get-ChildItem $runtimeBin | Format-Table Name, Length
+            exit 1
+          }
+          Write-Host "OK: $runtimeBin/java.exe present."
+
+      - name: Package installer from repaired app-image
         shell: bash
         run: |
-          found=$(find build/jpackage-temp -type f -iname "java.exe" -path "*/runtime/bin/*" 2>/dev/null | head -n1)
-          if [ -z "$found" ]; then
-            echo "ERROR: no runtime/bin/java.exe found anywhere under build/jpackage-temp."
-            echo "This usually means Windows Defender quarantined jlink/jpackage output during the build."
-            echo "Directory layout under build/jpackage-temp:"
-            find build/jpackage-temp -maxdepth 5 -type d || true
-            exit 1
-          fi
-          echo "OK: found $found"
+          mkdir -p dist
+          jpackage \
+            --type exe \
+            --app-image "build/appimage/NewNetOneEventlog" \
+            --name NewNetOneEventlog \
+            --app-version "${{ steps.version.outputs.value }}" \
+            --vendor "surya" \
+            --description "NewNetOne Eventlog Exporter" \
+            --dest dist \
+            --win-menu \
+            --win-shortcut \
+            --win-dir-chooser
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
