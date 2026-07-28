@@ -80,15 +80,15 @@ public class NewNetOneEventlog {
     static final String SERVER  = "live";   // "live" or "test" (ddlServer)
     static final String SERVICE = "";       // "" = all services (ddlService)
 
-    static final String FILTER_ERROR       = "";
+    static String FILTER_ERROR             = "";   // filled in via the login window
     static final String FILTER_USERNAME    = "";
     static final String FILTER_EVENTLOGID  = "";
-    static final String FILTER_SEARCHVALUE = "";
+    static String FILTER_SEARCHVALUE       = "";   // filled in via the login window
 
-    static final boolean SHOW_INFORMATION = false;
-    static final boolean SHOW_WARNING     = true;
-    static final boolean SHOW_ERROR       = true;
-    static final boolean SHOW_PENDING     = true;
+    static boolean SHOW_INFORMATION = false;   // filled in via the login window
+    static boolean SHOW_WARNING     = true;
+    static boolean SHOW_ERROR       = true;
+    static boolean SHOW_PENDING     = true;
 
     static final int MAX_PAGES = Integer.MAX_VALUE; // no cap - follow "Next >>" until it disappears
     static final String OUTPUT_FILENAME = "Eventlog.xlsx";
@@ -98,6 +98,8 @@ public class NewNetOneEventlog {
         "https://documentation.newnetone.com/Login.aspx?ReturnUrl=%2fEventlog%2fDefault.aspx";
     static final String EVENTLOG_URL =
         "https://documentation.newnetone.com/Eventlog/Default.aspx";
+    static final String EVENTLOG_DETAIL_URL_BASE =
+        "https://documentation.newnetone.com/Eventlog/Eventlog.aspx?ID=";
 
     HttpClient client;
 
@@ -184,6 +186,12 @@ public class NewNetOneEventlog {
         JTextField tfEndDate   = new JTextField(END_DATE, 18);
         JTextField tfStartTime = new JTextField(START_TIME, 18);
         JTextField tfEndTime   = new JTextField(END_TIME, 18);
+        JTextField tfErrorFilter = new JTextField(FILTER_ERROR, 18);
+        JTextField tfSearchValue = new JTextField(FILTER_SEARCHVALUE, 18);
+        JCheckBox cbInformation = new JCheckBox("Information", SHOW_INFORMATION);
+        JCheckBox cbWarning     = new JCheckBox("Warning", SHOW_WARNING);
+        JCheckBox cbError       = new JCheckBox("Error", SHOW_ERROR);
+        JCheckBox cbPending     = new JCheckBox("Pending", SHOW_PENDING);
 
         JDialog dialog = new JDialog((Frame) null, "NewNetOne Eventlog", true);
 
@@ -220,6 +228,19 @@ public class NewNetOneEventlog {
         addFormRow(form, gc, row++, "End Date (d-M-yyyy)", tfEndDate);
         addFormRow(form, gc, row++, "Start Time (HH:mm)", tfStartTime);
         addFormRow(form, gc, row++, "End Time (HH:mm)", tfEndTime);
+        addFormRow(form, gc, row++, "Error", tfErrorFilter);
+        addFormRow(form, gc, row++, "Search value", tfSearchValue);
+
+        JPanel eventTypes = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        eventTypes.setBackground(PANEL_WHITE);
+        for (JCheckBox cb : new JCheckBox[]{cbInformation, cbWarning, cbError, cbPending}) {
+            cb.setFont(uiFont(java.awt.Font.PLAIN, 13));
+            cb.setBackground(PANEL_WHITE);
+            eventTypes.add(cb);
+        }
+        gc.gridx = 0; gc.gridy = row++; gc.gridwidth = 2;
+        form.add(eventTypes, gc);
+        gc.gridwidth = 1;
 
         JButton cancelBtn = new JButton("Cancel");
         styleButton(cancelBtn, new Color(235, 235, 235), BRAND_DARK);
@@ -251,12 +272,18 @@ public class NewNetOneEventlog {
 
         if (!okPressed[0]) return false;
 
-        USERNAME   = tfUser.getText().trim();
-        PASSWORD   = new String(tfPass.getPassword());
-        START_DATE = tfStartDate.getText().trim();
-        END_DATE   = tfEndDate.getText().trim();
-        START_TIME = tfStartTime.getText().trim();
-        END_TIME   = tfEndTime.getText().trim();
+        USERNAME     = tfUser.getText().trim();
+        PASSWORD     = new String(tfPass.getPassword());
+        START_DATE   = tfStartDate.getText().trim();
+        END_DATE     = tfEndDate.getText().trim();
+        START_TIME   = tfStartTime.getText().trim();
+        END_TIME     = tfEndTime.getText().trim();
+        FILTER_ERROR       = tfErrorFilter.getText().trim();
+        FILTER_SEARCHVALUE = tfSearchValue.getText().trim();
+        SHOW_INFORMATION = cbInformation.isSelected();
+        SHOW_WARNING     = cbWarning.isSelected();
+        SHOW_ERROR       = cbError.isSelected();
+        SHOW_PENDING     = cbPending.isSelected();
 
         if (USERNAME.isEmpty() || PASSWORD.isEmpty()) {
             JOptionPane.showMessageDialog(null, "Username and password are required.",
@@ -405,11 +432,13 @@ public class NewNetOneEventlog {
                 "All done! 🎉", JOptionPane.INFORMATION_MESSAGE));
     }
 
-    /** Resolves ~/Desktop/Eventlog/Eventlog.xlsx, creating the folder if needed. */
+    /** Resolves ~/Desktop/Eventlog/Eventlog_<today's date>.xlsx, creating the folder if needed. */
     static String resolveOutputPath() {
         java.io.File dir = new java.io.File(System.getProperty("user.home"), "Desktop" + java.io.File.separator + "Eventlog");
         if (!dir.exists()) dir.mkdirs();
-        return new java.io.File(dir, OUTPUT_FILENAME).getAbsolutePath();
+        String today = java.time.LocalDate.now().format(SITE_DATE_FMT);
+        String dated = OUTPUT_FILENAME.replaceFirst("\\.xlsx$", "_" + today + ".xlsx");
+        return new java.io.File(dir, dated).getAbsolutePath();
     }
 
     // ------------------------- tiger progress dialog -------------------------
@@ -634,7 +663,9 @@ public class NewNetOneEventlog {
         s.append("&ctl00%24ContentPlaceHolder1%24tbEventlogID=").append(enc(FILTER_EVENTLOGID));
         s.append("&ctl00%24ContentPlaceHolder1%24tbUsername=").append(enc(FILTER_USERNAME));
         s.append("&ctl00%24ContentPlaceHolder1%24tbError=").append(enc(FILTER_ERROR));
-        s.append("&ctl00%24ContentPlaceHolder1%24tbWaarde=").append(enc(FILTER_SEARCHVALUE));
+        if (!FILTER_SEARCHVALUE.isEmpty()) {
+            s.append("&ctl00%24ContentPlaceHolder1%24tbWaarde=").append(enc(FILTER_SEARCHVALUE));
+        }
         s.append("&ctl00%24ContentPlaceHolder1%24calDatumVan%24Text=").append(enc(START_DATE));
         s.append("&ctl00%24ContentPlaceHolder1%24tbStartTime=").append(enc(START_TIME));
         s.append("&ctl00%24ContentPlaceHolder1%24calDatumTot%24Text=").append(enc(END_DATE));
@@ -658,9 +689,13 @@ public class NewNetOneEventlog {
     }
 
     String buildPostbackBody(String vs, String vsg, String ev, String target) {
+        return buildPostbackBody(vs, vsg, ev, target, "");
+    }
+
+    String buildPostbackBody(String vs, String vsg, String ev, String target, String argument) {
         return "ctl00_toolkitScriptMaster_HiddenField="
                 + "&__EVENTTARGET=" + enc(target)
-                + "&__EVENTARGUMENT=&__LASTFOCUS="
+                + "&__EVENTARGUMENT=" + enc(argument) + "&__LASTFOCUS="
                 + "&__VIEWSTATE=" + enc(vs)
                 + "&__VIEWSTATEGENERATOR=" + enc(vsg)
                 + "&__VIEWSTATEENCRYPTED="
@@ -720,6 +755,7 @@ public class NewNetOneEventlog {
             if (cells.size() < col.size()) continue; // pager/footer row, too few cells
 
             rows.add(new String[]{
+                    cell(cells, 0), // leftmost, unlabeled column holds the row's numeric event ID
                     cell(cells, col.get("vendor")), cell(cells, col.get("service")),
                     cell(cells, col.get("error")), cell(cells, col.get("username")),
                     cell(cells, col.get("response")), cell(cells, col.get("created"))
@@ -784,7 +820,7 @@ public class NewNetOneEventlog {
     }
 
     // ------------------------- xlsx output -------------------------
-    static final String[] HEADERS = {"Vendor", "Service", "Error", "Username",
+    static final String[] HEADERS = {"ID", "Vendor", "Service", "Error", "Username",
                                       "ResponseTimeMs", "Created"};
 
     void writeXlsx(List<String[]> rows, String outputPath) throws Exception {
@@ -798,7 +834,7 @@ public class NewNetOneEventlog {
             // errors (same prefix, different trailing detail) share a tab
             Map<String, List<String[]>> byError = new LinkedHashMap<>();
             for (String[] row : rows) {
-                String key = errorGroupKey(row[2]);
+                String key = errorGroupKey(row[3]);
                 byError.computeIfAbsent(key, k -> new ArrayList<>()).add(row);
             }
 
@@ -863,19 +899,28 @@ public class NewNetOneEventlog {
         for (int c = 0; c < HEADERS.length; c++) sh.autoSizeColumn(c);
     }
 
-    /** Writes an "Error Type | Count" summary table at the top of the sheet. Returns next free row. */
+    static final int MAX_IDS_IN_SUMMARY = 5;
+
+    /** Writes an "Error Type | Count | IDs" summary table at the top of the sheet. Returns next free row. */
     int writeErrorCountSummary(Sheet sh, Map<String, List<String[]>> byError, CellStyle bold) {
         Row hr = sh.createRow(0);
         Cell c0 = hr.createCell(0); c0.setCellValue("Error Type"); c0.setCellStyle(bold);
         Cell c1 = hr.createCell(1); c1.setCellValue("Count");     c1.setCellStyle(bold);
+        Cell c2 = hr.createCell(2); c2.setCellValue("IDs");       c2.setCellStyle(bold);
         int r = 1;
         for (Map.Entry<String, List<String[]>> e : byError.entrySet()) {
             Row row = sh.createRow(r++);
             row.createCell(0).setCellValue(e.getKey());
             row.createCell(1).setCellValue(e.getValue().size());
+            List<String[]> groupRows = e.getValue();
+            String ids = groupRows.stream().limit(MAX_IDS_IN_SUMMARY).map(row2 -> row2[0])
+                    .collect(java.util.stream.Collectors.joining(", "));
+            if (groupRows.size() > MAX_IDS_IN_SUMMARY) ids += ", ...";
+            row.createCell(2).setCellValue(ids);
         }
         sh.autoSizeColumn(0);
         sh.autoSizeColumn(1);
+        sh.autoSizeColumn(2);
         return r;
     }
 
